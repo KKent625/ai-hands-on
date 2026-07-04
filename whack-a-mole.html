@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>もぐらたたき!</title>
+<style>
+  :root {
+    --grass-light: #8fd14f;
+    --grass-dark: #5aa832;
+    --sky-top: #aee7ff;
+    --sky-bottom: #d9f7c5;
+    --dirt: #6b4a2b;
+    --dirt-dark: #4a3018;
+    --card-bg: rgba(255, 255, 255, 0.92);
+    --accent: #ff8c42;
+    --accent-dark: #e06d1f;
+    --text: #3a2c1a;
+    --time-good: #4caf50;
+    --time-warn: #ff9800;
+    --time-bad: #f44336;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    font-family: "Hiragino Maru Gothic ProN", "BIZ UDGothic", "Yu Gothic", "Segoe UI", sans-serif;
+    color: var(--text);
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    -webkit-user-select: none;
+    overflow: hidden;
+  }
+
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(to bottom, var(--sky-top) 0%, var(--sky-bottom) 45%, var(--grass-light) 45%, var(--grass-dark) 100%);
+  }
+
+  #game {
+    position: relative;
+    width: min(94vw, 560px);
+    padding: clamp(12px, 3vmin, 24px);
+    border-radius: 24px;
+    background: var(--card-bg);
+    box-shadow: 0 12px 40px rgba(40, 60, 20, 0.35);
+    touch-action: manipulation;
+  }
+
+  /* ---------- HUD ---------- */
+  .hud {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .hud .stat {
+    background: #fff6e8;
+    border: 2px solid #eadbc2;
+    border-radius: 14px;
+    padding: 6px 14px;
+    text-align: center;
+    min-width: 90px;
+  }
+  .hud .stat .label {
+    font-size: clamp(10px, 2.4vmin, 12px);
+    color: #a08a68;
+    letter-spacing: 0.08em;
+  }
+  .hud .stat .value {
+    font-size: clamp(18px, 5vmin, 26px);
+    font-weight: bold;
+    font-variant-numeric: tabular-nums;
+  }
+  #mute-btn {
+    border: 2px solid #eadbc2;
+    background: #fff6e8;
+    border-radius: 12px;
+    font-size: clamp(16px, 4.5vmin, 22px);
+    width: clamp(38px, 10vmin, 48px);
+    height: clamp(38px, 10vmin, 48px);
+    cursor: pointer;
+    transition: transform 0.1s;
+  }
+  #mute-btn:active { transform: scale(0.9); }
+
+  /* ---------- タイムバー ---------- */
+  #time-bar-track {
+    height: clamp(10px, 2.6vmin, 14px);
+    background: #e8dcc8;
+    border-radius: 999px;
+    overflow: hidden;
+    margin-bottom: 14px;
+  }
+  #time-bar {
+    height: 100%;
+    width: 100%;
+    border-radius: 999px;
+    background: var(--time-good);
+    transition: background-color 0.4s;
+  }
+
+  /* ---------- グリッド ---------- */
+  #grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: clamp(8px, 2.5vmin, 18px);
+    padding: clamp(8px, 2.5vmin, 16px);
+    background: linear-gradient(to bottom, var(--grass-light), var(--grass-dark));
+    border-radius: 18px;
+    box-shadow: inset 0 4px 12px rgba(0, 0, 0, 0.18);
+  }
+
+  .hole {
+    position: relative;
+    aspect-ratio: 1 / 0.9;
+    cursor: pointer;
+  }
+
+  /* 穴(奥) */
+  .hole::before {
+    content: "";
+    position: absolute;
+    left: 8%;
+    right: 8%;
+    bottom: 6%;
+    height: 30%;
+    background: radial-gradient(ellipse at center, var(--dirt-dark) 0%, #241505 75%);
+    border-radius: 50%;
+  }
+  /* 土手(手前) */
+  .hole::after {
+    content: "";
+    position: absolute;
+    left: 4%;
+    right: 4%;
+    bottom: 0;
+    height: 22%;
+    background: linear-gradient(to bottom, var(--dirt), var(--dirt-dark));
+    border-radius: 50% 50% 40% 40%;
+    pointer-events: none;
+  }
+
+  .mole-clip {
+    position: absolute;
+    left: 12%;
+    right: 12%;
+    bottom: 14%;
+    top: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  .mole {
+    position: absolute;
+    left: 6%;
+    right: 6%;
+    bottom: 0;
+    transform: translateY(105%);
+    transition: transform 0.14s cubic-bezier(0.34, 1.4, 0.64, 1);
+    will-change: transform;
+  }
+  .hole.up .mole { transform: translateY(8%); }
+  .hole.hit .mole {
+    transform: translateY(40%) scaleY(0.72);
+    transition: transform 0.1s ease-out;
+  }
+  .mole svg { display: block; width: 100%; height: auto; filter: drop-shadow(0 3px 3px rgba(0,0,0,0.25)); }
+
+  .mole .face-hit { display: none; }
+  .hole.hit .face-normal { display: none; }
+  .hole.hit .face-hit { display: block; }
+
+  /* ---------- エフェクト ---------- */
+  .score-pop {
+    position: fixed;
+    font-size: clamp(18px, 5vmin, 26px);
+    font-weight: bold;
+    color: var(--accent-dark);
+    text-shadow: 0 2px 0 #fff;
+    pointer-events: none;
+    z-index: 50;
+    animation: pop-rise 0.7s ease-out forwards;
+  }
+  @keyframes pop-rise {
+    0%   { transform: translate(-50%, 0) scale(0.6); opacity: 0; }
+    15%  { transform: translate(-50%, -10px) scale(1.15); opacity: 1; }
+    100% { transform: translate(-50%, -56px) scale(1); opacity: 0; }
+  }
+
+  .star {
+    position: fixed;
+    font-size: clamp(12px, 3.5vmin, 18px);
+    pointer-events: none;
+    z-index: 49;
+    animation: star-fly 0.55s ease-out forwards;
+  }
+  @keyframes star-fly {
+    0%   { transform: translate(-50%, -50%) scale(0.4); opacity: 1; }
+    100% { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(1) rotate(200deg); opacity: 0; }
+  }
+
+  /* ---------- オーバーレイ画面 ---------- */
+  .screen {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: clamp(10px, 3vmin, 18px);
+    background: rgba(255, 252, 244, 0.96);
+    border-radius: 24px;
+    z-index: 100;
+    text-align: center;
+    padding: 20px;
+  }
+  .screen.hidden { display: none; }
+
+  .title {
+    font-size: clamp(30px, 9vmin, 48px);
+    font-weight: bold;
+    color: var(--accent-dark);
+    text-shadow: 2px 3px 0 #ffe3c4;
+    animation: title-bounce 2.2s ease-in-out infinite;
+  }
+  @keyframes title-bounce {
+    0%, 100% { transform: translateY(0) rotate(-1.5deg); }
+    50%      { transform: translateY(-8px) rotate(1.5deg); }
+  }
+  .title-mole { width: clamp(80px, 24vmin, 130px); }
+
+  .subtitle { font-size: clamp(13px, 3.5vmin, 16px); color: #8c7a5e; }
+
+  .big-btn {
+    font-family: inherit;
+    font-size: clamp(18px, 5vmin, 24px);
+    font-weight: bold;
+    color: #fff;
+    background: linear-gradient(to bottom, var(--accent), var(--accent-dark));
+    border: none;
+    border-radius: 999px;
+    padding: clamp(12px, 3vmin, 16px) clamp(36px, 10vmin, 56px);
+    cursor: pointer;
+    box-shadow: 0 5px 0 #b55415, 0 8px 16px rgba(0,0,0,0.2);
+    transition: transform 0.08s, box-shadow 0.08s;
+  }
+  .big-btn:active {
+    transform: translateY(4px);
+    box-shadow: 0 1px 0 #b55415, 0 3px 8px rgba(0,0,0,0.2);
+  }
+
+  .final-score {
+    font-size: clamp(40px, 13vmin, 68px);
+    font-weight: bold;
+    color: var(--accent-dark);
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+  .final-label { font-size: clamp(14px, 4vmin, 18px); color: #8c7a5e; }
+
+  #new-record {
+    font-size: clamp(18px, 5.5vmin, 26px);
+    font-weight: bold;
+    color: #e0308a;
+    animation: record-pulse 0.8s ease-in-out infinite;
+  }
+  #new-record.hidden { display: none; }
+  @keyframes record-pulse {
+    0%, 100% { transform: scale(1); }
+    50%      { transform: scale(1.14); }
+  }
+
+  .best-note { font-size: clamp(13px, 3.5vmin, 16px); color: #8c7a5e; }
+</style>
+</head>
+<body>
+
+<template id="mole-template">
+  <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+    <!-- 耳 -->
+    <circle cx="24" cy="18" r="10" fill="#7a5537"/>
+    <circle cx="76" cy="18" r="10" fill="#7a5537"/>
+    <circle cx="24" cy="18" r="5" fill="#a37e57"/>
+    <circle cx="76" cy="18" r="5" fill="#a37e57"/>
+    <!-- 体 -->
+    <ellipse cx="50" cy="58" rx="40" ry="44" fill="#8d6644"/>
+    <ellipse cx="50" cy="70" rx="26" ry="26" fill="#c9a679"/>
+    <!-- 手 -->
+    <ellipse cx="14" cy="72" rx="9" ry="12" fill="#7a5537" transform="rotate(-20 14 72)"/>
+    <ellipse cx="86" cy="72" rx="9" ry="12" fill="#7a5537" transform="rotate(20 86 72)"/>
+    <!-- 通常の顔 -->
+    <g class="face-normal">
+      <circle cx="37" cy="46" r="4.5" fill="#2b1d10"/>
+      <circle cx="63" cy="46" r="4.5" fill="#2b1d10"/>
+      <circle cx="38.5" cy="44.5" r="1.6" fill="#fff"/>
+      <circle cx="64.5" cy="44.5" r="1.6" fill="#fff"/>
+      <ellipse cx="28" cy="56" rx="5" ry="3.4" fill="#e8a0a0" opacity="0.7"/>
+      <ellipse cx="72" cy="56" rx="5" ry="3.4" fill="#e8a0a0" opacity="0.7"/>
+      <path d="M46 60 Q50 65 54 60" stroke="#2b1d10" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+    </g>
+    <!-- 被弾の顔 -->
+    <g class="face-hit">
+      <path d="M33 42 l8 8 M41 42 l-8 8" stroke="#2b1d10" stroke-width="2.6" stroke-linecap="round"/>
+      <path d="M59 42 l8 8 M67 42 l-8 8" stroke="#2b1d10" stroke-width="2.6" stroke-linecap="round"/>
+      <ellipse cx="50" cy="62" rx="4.5" ry="6" fill="#2b1d10"/>
+    </g>
+    <!-- 鼻 -->
+    <ellipse cx="50" cy="53" rx="6.5" ry="5" fill="#e87a90"/>
+    <!-- ひげ -->
+    <g stroke="#5c4028" stroke-width="1.4" stroke-linecap="round">
+      <path d="M30 52 L14 49"/><path d="M30 56 L14 58"/>
+      <path d="M70 52 L86 49"/><path d="M70 56 L86 58"/>
+    </g>
+  </svg>
+</template>
+
+<div id="game">
+  <div class="hud">
+    <div class="stat">
+      <div class="label">スコア</div>
+      <div class="value" id="score">0</div>
+    </div>
+    <div class="stat">
+      <div class="label">のこり</div>
+      <div class="value" id="time">30</div>
+    </div>
+    <div class="stat">
+      <div class="label">ハイスコア</div>
+      <div class="value" id="highscore">0</div>
+    </div>
+    <button id="mute-btn" aria-label="ミュート切替">🔊</button>
+  </div>
+
+  <div id="time-bar-track"><div id="time-bar"></div></div>
+
+  <div id="grid"></div>
+
+  <!-- スタート画面 -->
+  <div class="screen" id="start-screen">
+    <div class="title">もぐらたたき!</div>
+    <div class="title-mole" id="title-mole"></div>
+    <div class="subtitle">30秒でなんびき たたけるかな?</div>
+    <div class="best-note">ハイスコア: <span id="start-highscore">0</span></div>
+    <button class="big-btn" id="start-btn">スタート!</button>
+  </div>
+
+  <!-- リザルト画面 -->
+  <div class="screen hidden" id="result-screen">
+    <div id="new-record" class="hidden">🎉 ハイスコアこうしん! 🎉</div>
+    <div class="final-label">スコア</div>
+    <div class="final-score" id="final-score">0</div>
+    <div class="best-note">ハイスコア: <span id="result-highscore">0</span></div>
+    <button class="big-btn" id="retry-btn">もういちど!</button>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ================= Storage ================= */
+const Storage = {
+  get(key, fallback) {
+    try {
+      const v = localStorage.getItem(key);
+      return v === null ? fallback : JSON.parse(v);
+    } catch { return fallback; }
+  },
+  set(key, value) {
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+  }
+};
+const KEY_HIGHSCORE = "whackAMole.highScore";
+const KEY_MUTED = "whackAMole.muted";
+
+/* ================= AudioEngine ================= */
+const AudioEngine = {
+  ctx: null,
+  master: null,
+  muted: Storage.get(KEY_MUTED, false),
+  bgmTimer: null,
+  bgmStep: 0,
+  bgmNextTime: 0,
+
+  init() {
+    if (this.ctx) {
+      if (this.ctx.state === "suspended") this.ctx.resume();
+      return;
+    }
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    this.ctx = new AC();
+    this.master = this.ctx.createGain();
+    this.master.gain.value = this.muted ? 0 : 0.9;
+    this.master.connect(this.ctx.destination);
+  },
+
+  setMuted(muted) {
+    this.muted = muted;
+    Storage.set(KEY_MUTED, muted);
+    if (this.master) {
+      this.master.gain.setTargetAtTime(muted ? 0 : 0.9, this.ctx.currentTime, 0.02);
+    }
+  },
+
+  tone({ freq, freqEnd, start, dur, type = "square", gain = 0.15 }) {
+    if (!this.ctx) return;
+    const t = start ?? this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, t);
+    if (freqEnd) osc.frequency.exponentialRampToValueAtTime(freqEnd, t + dur);
+    g.gain.setValueAtTime(gain, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    osc.connect(g).connect(this.master);
+    osc.start(t);
+    osc.stop(t + dur + 0.02);
+  },
+
+  playHit() {
+    this.tone({ freq: 620, freqEnd: 160, dur: 0.1, type: "square", gain: 0.22 });
+    this.tone({ freq: 1400, freqEnd: 900, dur: 0.05, type: "triangle", gain: 0.1 });
+  },
+  playMiss() {
+    this.tone({ freq: 130, freqEnd: 55, dur: 0.16, type: "triangle", gain: 0.2 });
+  },
+  playPop() {
+    this.tone({ freq: 340, freqEnd: 640, dur: 0.07, type: "sine", gain: 0.09 });
+  },
+  playTick() {
+    this.tone({ freq: 880, dur: 0.06, type: "square", gain: 0.1 });
+  },
+  playJingle(newRecord) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    const notes = newRecord
+      ? [523.25, 659.25, 783.99, 1046.5, 783.99, 1046.5, 1318.5]
+      : [523.25, 659.25, 783.99, 1046.5];
+    notes.forEach((f, i) => {
+      this.tone({ freq: f, start: t + i * 0.13, dur: 0.22, type: "square", gain: 0.14 });
+    });
+  },
+
+  /* --- BGM: 8bit風ループ --- */
+  BGM_TEMPO: 138,
+  MELODY: [523.25, 659.25, 783.99, 659.25, 440, 523.25, 659.25, 523.25,
+           349.23, 440, 523.25, 440, 392, 493.88, 587.33, 493.88],
+  BASS:   [130.81, 0, 0, 0, 110, 0, 0, 0, 87.31, 0, 0, 0, 98, 0, 0, 0],
+
+  startBGM() {
+    if (!this.ctx || this.bgmTimer) return;
+    this.bgmStep = 0;
+    this.bgmNextTime = this.ctx.currentTime + 0.1;
+    this.bgmTimer = setInterval(() => this.scheduleBGM(), 40);
+  },
+  scheduleBGM() {
+    const stepDur = 60 / this.BGM_TEMPO / 2; // 8分音符
+    while (this.bgmNextTime < this.ctx.currentTime + 0.12) {
+      const i = this.bgmStep % 16;
+      this.tone({ freq: this.MELODY[i], start: this.bgmNextTime, dur: stepDur * 0.85, type: "square", gain: 0.035 });
+      if (this.BASS[i]) {
+        this.tone({ freq: this.BASS[i], start: this.bgmNextTime, dur: stepDur * 3.6, type: "triangle", gain: 0.06 });
+      }
+      this.bgmNextTime += stepDur;
+      this.bgmStep++;
+    }
+  },
+  stopBGM() {
+    clearInterval(this.bgmTimer);
+    this.bgmTimer = null;
+  }
+};
+
+/* ================= GameState ================= */
+const DURATION = 30_000; // 30秒
+const HOLE_COUNT = 9;
+const HIT_SCORE = 10;
+
+const state = {
+  running: false,
+  score: 0,
+  startTime: 0,
+  highScore: Storage.get(KEY_HIGHSCORE, 0),
+  spawnTimeouts: new Set(),
+  rafId: 0,
+  lastTickSecond: -1
+};
+
+const lerp = (a, b, t) => a + (b - a) * Math.min(Math.max(t, 0), 1);
+const progress = () => state.running ? (performance.now() - state.startTime) / DURATION : 0;
+
+/* 難易度カーブ: 進行度に応じて出現間隔と表示時間を短縮 */
+const spawnInterval = () => lerp(850, 360, progress()) * (0.85 + Math.random() * 0.3);
+const moleUpTime = () => lerp(1150, 560, progress());
+const maxConcurrent = () => progress() < 0.45 ? 1 : 2;
+
+/* ================= UI ================= */
+const $ = (id) => document.getElementById(id);
+const grid = $("grid");
+const holes = [];
+
+function buildGrid() {
+  const template = $("mole-template");
+  for (let i = 0; i < HOLE_COUNT; i++) {
+    const hole = document.createElement("div");
+    hole.className = "hole";
+    const clip = document.createElement("div");
+    clip.className = "mole-clip";
+    const mole = document.createElement("div");
+    mole.className = "mole";
+    mole.appendChild(template.content.cloneNode(true));
+    clip.appendChild(mole);
+    hole.appendChild(clip);
+    hole.addEventListener("pointerdown", (e) => onWhack(hole, e));
+    grid.appendChild(hole);
+    holes.push(hole);
+  }
+  $("title-mole").appendChild(template.content.cloneNode(true));
+}
+
+function updateScoreUI() {
+  $("score").textContent = state.score;
+  $("highscore").textContent = state.highScore;
+}
+
+function spawnEffect(x, y) {
+  const pop = document.createElement("div");
+  pop.className = "score-pop";
+  pop.textContent = "+" + HIT_SCORE;
+  pop.style.left = x + "px";
+  pop.style.top = y + "px";
+  document.body.appendChild(pop);
+  pop.addEventListener("animationend", () => pop.remove());
+
+  for (let i = 0; i < 6; i++) {
+    const star = document.createElement("div");
+    star.className = "star";
+    star.textContent = "⭐";
+    const angle = (Math.PI * 2 * i) / 6 + Math.random() * 0.6;
+    const dist = 34 + Math.random() * 26;
+    star.style.setProperty("--dx", Math.cos(angle) * dist + "px");
+    star.style.setProperty("--dy", Math.sin(angle) * dist + "px");
+    star.style.left = x + "px";
+    star.style.top = y + "px";
+    document.body.appendChild(star);
+    star.addEventListener("animationend", () => star.remove());
+  }
+}
+
+/* ================= MoleManager ================= */
+function upCount() {
+  return holes.filter((h) => h.classList.contains("up")).length;
+}
+
+function addTimeout(fn, ms) {
+  const id = setTimeout(() => {
+    state.spawnTimeouts.delete(id);
+    fn();
+  }, ms);
+  state.spawnTimeouts.add(id);
+  return id;
+}
+
+function clearAllTimeouts() {
+  state.spawnTimeouts.forEach(clearTimeout);
+  state.spawnTimeouts.clear();
+}
+
+function spawnMole() {
+  if (!state.running) return;
+  const free = holes.filter((h) => !h.classList.contains("up"));
+  if (free.length > 0 && upCount() < maxConcurrent()) {
+    const hole = free[Math.floor(Math.random() * free.length)];
+    hole.classList.remove("hit");
+    hole.classList.add("up");
+    hole.dataset.whacked = "";
+    AudioEngine.playPop();
+    addTimeout(() => {
+      if (!hole.dataset.whacked) hole.classList.remove("up");
+    }, moleUpTime());
+  }
+  addTimeout(spawnMole, spawnInterval());
+}
+
+function onWhack(hole, e) {
+  if (!state.running) return;
+  if (hole.classList.contains("up") && !hole.dataset.whacked) {
+    hole.dataset.whacked = "1";
+    hole.classList.add("hit");
+    state.score += HIT_SCORE;
+    updateScoreUI();
+    AudioEngine.playHit();
+    spawnEffect(e.clientX, e.clientY);
+    addTimeout(() => hole.classList.remove("up", "hit"), 320);
+  } else if (!hole.classList.contains("up")) {
+    AudioEngine.playMiss();
+  }
+}
+
+/* ================= タイマー & ゲーム進行 ================= */
+function gameLoop() {
+  const elapsed = performance.now() - state.startTime;
+  const remaining = Math.max(0, DURATION - elapsed);
+  const remainSec = Math.ceil(remaining / 1000);
+
+  $("time").textContent = remainSec;
+  const ratio = remaining / DURATION;
+  const bar = $("time-bar");
+  bar.style.width = ratio * 100 + "%";
+  bar.style.backgroundColor =
+    ratio > 0.5 ? "var(--time-good)" : ratio > 0.2 ? "var(--time-warn)" : "var(--time-bad)";
+
+  if (remainSec <= 3 && remainSec >= 1 && remainSec !== state.lastTickSecond) {
+    state.lastTickSecond = remainSec;
+    AudioEngine.playTick();
+  }
+
+  if (remaining <= 0) {
+    endGame();
+    return;
+  }
+  state.rafId = requestAnimationFrame(gameLoop);
+}
+
+function startGame() {
+  AudioEngine.init();
+  state.running = true;
+  state.score = 0;
+  state.startTime = performance.now();
+  state.lastTickSecond = -1;
+  updateScoreUI();
+  $("start-screen").classList.add("hidden");
+  $("result-screen").classList.add("hidden");
+  AudioEngine.startBGM();
+  spawnMole();
+  state.rafId = requestAnimationFrame(gameLoop);
+}
+
+function endGame() {
+  state.running = false;
+  cancelAnimationFrame(state.rafId);
+  clearAllTimeouts();
+  AudioEngine.stopBGM();
+  holes.forEach((h) => {
+    h.classList.remove("up", "hit");
+    delete h.dataset.whacked;
+  });
+
+  const isNewRecord = state.score > state.highScore;
+  if (isNewRecord) {
+    state.highScore = state.score;
+    Storage.set(KEY_HIGHSCORE, state.highScore);
+  }
+  AudioEngine.playJingle(isNewRecord);
+
+  setTimeout(() => {
+    $("final-score").textContent = state.score;
+    $("result-highscore").textContent = state.highScore;
+    $("new-record").classList.toggle("hidden", !isNewRecord);
+    updateScoreUI();
+    $("result-screen").classList.remove("hidden");
+  }, 500);
+}
+
+/* ================= 初期化 ================= */
+function updateMuteBtn() {
+  $("mute-btn").textContent = AudioEngine.muted ? "🔇" : "🔊";
+}
+
+buildGrid();
+updateScoreUI();
+$("start-highscore").textContent = state.highScore;
+updateMuteBtn();
+
+$("start-btn").addEventListener("click", startGame);
+$("retry-btn").addEventListener("click", startGame);
+$("mute-btn").addEventListener("click", () => {
+  AudioEngine.init();
+  AudioEngine.setMuted(!AudioEngine.muted);
+  updateMuteBtn();
+});
+</script>
+</body>
+</html>
